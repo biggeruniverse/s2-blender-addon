@@ -93,7 +93,7 @@ class S2Model:
                                 if i < len(bone.name):
                                         boneblock.data += bone.name[i]
                                 else:
-                                        boneblock.data += '\0'
+                                        boneblock.data += b'\0'
                         for c in range(3):
                                 for a in range(3):
                                         boneblock.data += sr_io.float2str(bone.invBase.axis[c].data[a])
@@ -244,7 +244,7 @@ class S2Model:
                         bone.idx = i
                         parent = sr_io.endianint(block.data[offset:offset+4])
                         offset+=4
-                        bone.name = block.data[offset:offset+Bone.NAME_LENGTH]
+                        bone.name = block.data[offset:offset+Bone.NAME_LENGTH].decode('utf-8')
                         offset += Bone.NAME_LENGTH
                         #print str(parent) + "bone "+str(i)+" "+bone.name+" "+str(parent)
                         if parent >= 0 and parent < len(self.bones):

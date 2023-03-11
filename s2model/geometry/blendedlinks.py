@@ -7,4 +7,4 @@ class blendedWeights:
 class blendedLinkGroup:
 	def __init__(self):
 		self.mesh = -1
-		self.links = [];
+		self.links = []

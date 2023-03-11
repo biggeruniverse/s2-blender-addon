@@ -39,22 +39,11 @@ class S2Exporter(bpy.types.Operator, ExportHelper):
 
       print("Exporting")
       # Now start exporting the target object.
-      self.export_object(self.obj_name)
+      mdl = translate.fromBlender(obj_name!="")
+      mdl.saveFile(self.filepath)
       # Parse all the objects in the scene.
       print("Finished")
       return {'FINISHED'}
-
-
-   def export_object(self, obj_name):
-       for item in bpy.data.objects:
-           if item.type == 'MESH' :
-               for face in item.data.polygons:
-                   verts_in_face = face.vertices[:]
-                   print("face index ", face.index)
-                   print("normal ", face.normal)
-                   for vert in verts_in_face:
-                       print("vertex coords ", item.data.vertices[vert].co)
-
 
    def parse_command_line_options(self):
       obj_name = ""
