@@ -4,7 +4,15 @@ import bpy
 from bpy_extras.image_utils import load_image
 from bpy_extras import node_shader_utils
 
-def meshToBlender(mesh, model, skel):
+from s2model import model
+from .geometry.mesh import Mesh
+from .geometry.surface import *
+from .animation.bone import Bone
+from .geometry.blendedlinks import *
+import s2model.geometry.matrix as matrix
+
+
+def meshToBlender(mesh, model, midx, skel):
     mesh_uvs = []
     blmesh = bpy.data.meshes.new(name=mesh.name)
 
@@ -54,16 +62,6 @@ def meshToBlender(mesh, model, skel):
         #for face in blmesh.uv_textures[0].data:
         #    face.image = image
 
-    if mesh.boneLink > -1:
-        bone = skel.bones[mesh.boneLink]
-        blmesh.vertex_groups.add(name=bone.name)
-        for i, v in enumerate(mesh.verts):
-            blmesh.vertex_groups[0].add(i, 1.0)
-    elif model.blendedLinks or model.singleLinks:
-        for bone in skel.bones:
-            blmesh.vertex_groups.add(name=bone.name)
-        #TODO: blended links stuff
-
     return blmesh
 
 def toBlender(model):
@@ -88,6 +86,10 @@ def toBlender(model):
         for bone in model.bones:
             if bone.parent == None:
                 bn = skel.edit_bones.new(bone.name)
+                bn.matrix = [[bone.base.axis[0].data[0], bone.base.axis[0].data[1], bone.base.axis[0].data[2], 0.0],
+                                                [bone.base.axis[1].data[0], bone.base.axis[1].data[1], bone.base.axis[1].data[2], 0.0],
+                                                [bone.base.axis[2].data[0], bone.base.axis[2].data[1], bone.base.axis[2].data[2], 0.0],
+                                                [bone.base.pos.data[0], bone.base.pos.data[1], bone.base.pos.data[2], 1.0]]
                 bn.head = (bone.base.pos.data[0], bone.base.pos.data[1], bone.base.pos.data[2])
                 bn.tail = (bone.base.pos.data[0], bone.base.pos.data[1], bone.base.pos.data[2]+1)
                 bonels[bone.idx] = bn
@@ -96,11 +98,16 @@ def toBlender(model):
                     jointls.append((child, bn, bone))
 
         for joint in jointls:
+            print("child bone "+bone.name)
             bone = joint[0]
             bn = skel.edit_bones.new(bone.name)
             bn.parent = joint[1]
+            bn.matrix = [[bone.base.axis[0].data[0], bone.base.axis[0].data[1], bone.base.axis[0].data[2], 0.0],
+                            [bone.base.axis[1].data[0], bone.base.axis[1].data[1], bone.base.axis[1].data[2], 0.0],
+                            [bone.base.axis[2].data[0], bone.base.axis[2].data[1], bone.base.axis[2].data[2], 0.0],
+                            [bone.base.pos.data[0], bone.base.pos.data[1], bone.base.pos.data[2], 1.0]]
             bn.head = (bone.base.pos.data[0], bone.base.pos.data[1], bone.base.pos.data[2])
-            pos = (bone.base.pos.data[0], bone.base.pos.data[1], bone.base.pos.data[2]+1)
+            pos = (bone.base.pos.data[0], bone.base.pos.data[1]-2, bone.base.pos.data[2])
             if bone.children:
                 pos = (bone.children[0].base.pos.data[0],bone.children[0].base.pos.data[1],bone.children[0].base.pos.data[2])
             bn.tail = pos
@@ -109,37 +116,83 @@ def toBlender(model):
                 jointls.append((child, bn, bone))
 
     skel.transform(mathutils.Matrix.Rotation(math.radians(180.0), 4, 'Z'))            
-        
+    
     
     #create mesh objects
-    for m in model.meshes:
-        mesh = bpy.data.objects.new(m.name, meshToBlender(m, model, skel))
+    for idx, m in enumerate(model.meshes):
+        mesh = bpy.data.objects.new(m.name, meshToBlender(m, model, idx, skel))
         mesh.parent = parent
+
+        #link bones
+        if m.boneLink > -1:
+            bone = skel.edit_bones[m.boneLink]
+            mesh.vertex_groups.new(name=bone.name)
+            for i, v in enumerate(m.verts):
+                mesh.vertex_groups[0].add([i], 1.0, 'ADD')
+        elif model.blendedLinks:
+            #build a set of unique bones referenced by this mesh
+            bone_set = set()
+            for grp in model.blendedLinks[idx]:
+                for bw in grp.links:
+                    for b in bw.indexes:
+                        bone_set.add(b)
+
+            bone_set = list(bone_set) #the ol' switcharoo!
+            for bone in bone_set:
+                mesh.vertex_groups.new(name=skel.edit_bones[bone].name)
+            #blended links stuff
+            for grp in model.blendedLinks[idx]:
+                for i,bw in enumerate(grp.links):
+                    for b in range(bw.numWeights):
+                        bwi = bone_set.index(bw.indexes[b])
+                        mesh.vertex_groups[bwi].add([i], bw.weights[b], 'ADD')
+
         bpy.context.collection.objects.link(mesh)
 
     for i, surf in enumerate(model.surfs):
         if surf.mesh is None:
-            #TODO: the surface_t.toMesh() function doesn't actually work.
-            #surf.toMesh()
-            continue
+            #FIXME: the surface_t.toMesh() function doesn't actually work.
+            surf.toMesh()
         blmesh = meshToBlender(surf.mesh, model)
         bpy.data.objects.new("_surf%03d" % i, blmesh)
         blmesh.parent = parent
         bpy.context.collection.objects.link(blmesh)
 
-def addMesh(model, item, bones):
+def addMesh(mdl, item, i, bones):
+    print("Adding mesh "+str(i))
     mesh = Mesh()
     mesh.name = item.name
     #mesh.texture = item.texture
+    for i,vert in enumerate(item.data.vertices):
+        v = Vertex()
+        v.data = [item.data.vertices[i].co[0], item.data.vertices[i].co[2], -item.data.vertices[1].co[1]]
+        v.normal.data = [item.data.vertices[i].normal[0], item.data.vertices[i].normal[2], -item.data.vertices[1].normal[1]]
+        mesh.verts.append(v)
+    mesh.numVerts = len(mesh.verts)
+
     for face in item.data.polygons:
         verts_in_face = face.vertices[:]
-        print("face index ", face.index)
-        print("normal ", face.normal)
+        f = Face()
         for vert in verts_in_face:
-            print("vertex coords ", item.data.vertices[vert].co)
+            f.data.append(vert)
+        mesh.faces.append(f)
+        mesh.numFaces = len(mesh.faces)
+
+    #FIXME: if we've only got one bone, it's a rigid mesh, not blended
+    mesh.blend = True
+    blList = blendedLinkGroup()
+    blList.mesh = i
+
+    mdl.meshes.append(mesh)
+    mdl.blendedLinks[-1].append(blList)
+
+def addSurf(mdl, item):
+    surf = surface_t()
+    #TODO: get the surf mesh and turn it into a set of planes
+    mdl.surfs.append(surf)
 
 def fromBlender(useSelection = False):
-    model = S2Model()
+    mdl = model.S2Model()
 
     root_bone = Bone()
     root_bone.base = matrix.matrix43_t()
@@ -147,10 +200,29 @@ def fromBlender(useSelection = False):
     root_bone.idx = 0
     root_bone.name = 'Scene Root'
     root_bone.parent = -1
-    model.bones.append(root_bone)
+    mdl.bones.append(root_bone)
 
+    #capture the skeleton
+    skel = bpy.data.armatures[-1]
+    for bone in skel.bones:
+        if bone.name == 'Bone' or bone.name == 'Scene_Root':
+            continue
+        bn = Bone()
+        bn.base = matrix.fromBlenderMatrix(bone.matrix+[bone.head[0],bone.head[1],bone.head[2]])
+        bn.invBase = matrix.matrix43_t()
+        bn.idx = len(mdl.bones)
+        bn.name = bone.name
+        bn.parent = skel.bones.find(bone.parent)-1
+        mdl.bones.append(bn)
+
+    mcount = 0
     for item in bpy.data.objects:
-        if item.type == 'MESH' :
-            addMesh(model, item, None)
+        if item.type == 'MESH':
+            if item.name.startswith("_surf"):
+                addSurf(mdl, item)
+            else:
+                mdl.blendedLinks.append([])
+                addMesh(mdl, item, mcount, None)
+                mcount += 1
 
-    return model
+    return mdl

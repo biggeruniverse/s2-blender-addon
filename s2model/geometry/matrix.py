@@ -20,13 +20,13 @@ def DEG2RAD(x):
 def RAD2DEG(x):
     return (x * 180.0) / math.pi
 
-def fromMayaMatrix(maya_mat):
+def fromBlenderMatrix(mat):
     tmp = matrix43_t()
     for i in range(3):
         for j in range(3):
-            tmp.axis[i].data[j] = maya_mat(i, j)
+            tmp.axis[i].data[j] = mat[i][j]
     for j in range(3):
-        tmp.pos.data[j] = maya_mat(3, j)
+        tmp.pos.data[j] = mat[3][j]
     return tmp
 
 def multiplyAxis(a, b):

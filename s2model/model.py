@@ -74,24 +74,25 @@ class S2Model:
 
         def saveFile(self, filename):
                 f = open(filename, 'wb')
-                f.write('SMDL')
+                f.write(b'SMDL')
                 
-                f.write('head')
+                f.write(b'head')
                 f.write(sr_io.int2str(44)) # block length
                 f.write(sr_io.int2str(3))
                 f.write(sr_io.int2str(len(self.meshes)))
                 f.write(sr_io.int2str(0)) # <-- add later?
                 f.write(sr_io.int2str(len(self.surfs)))
                 f.write(sr_io.int2str(len(self.bones)))
-                f.write('\0' * 24) # bmin, bmax, fix later
+                f.write(b'\0' * 24) # bmin, bmax, fix later
 
                 boneblock = sr_io.FileBlock()
-                boneblock.name = 'bone'
+                boneblock.name = b'bone'
                 for bone in self.bones:
                         boneblock.data += sr_io.int2str(bone.parent)
                         for i in range(Bone.NAME_LENGTH):
-                                if i < len(bone.name):
-                                        boneblock.data += bone.name[i]
+                                name = bone.name.encode()
+                                if i < len(name):
+                                        boneblock.data += name[i].to_bytes(1, 'big')
                                 else:
                                         boneblock.data += b'\0'
                         for c in range(3):
@@ -110,30 +111,31 @@ class S2Model:
                         boneblock.data += sr_io.float2str(1.0)
                 boneblock.write(f)
 
-                for idx in range(len(self.meshes)):
-                        mesh = self.meshes[idx]
+                for idx, mesh in enumerate(self.meshes):
                         meshblock = sr_io.FileBlock()
-                        meshblock.name = 'mesh'
+                        meshblock.name = b'mesh'
                         meshblock.data += sr_io.int2str(idx)
+                        name = mesh.name.encode()
+                        tex = mesh.texture.encode()
                         for i in range(Mesh.NAME_LENGTH):
                                 if i < len(mesh.name):
-                                        meshblock.data += mesh.name[i]
+                                        meshblock.data += name[i].to_bytes(1, 'big')
                                 else:
-                                        meshblock.data += '\0'
+                                        meshblock.data += b'\0'
                         for i in range(64):
                                 if i < len(mesh.texture):
-                                        meshblock.data += mesh.texture[i]
+                                        meshblock.data += tex[i].to_bytes(1, 'big')
                                 else:
-                                        meshblock.data += '\0'
+                                        meshblock.data += b'\0'
                         meshblock.data += sr_io.int2str(1) # mode, fix later
                         meshblock.data += sr_io.int2str(len(mesh.verts))
-                        meshblock.data += '\0' * 24 # bmin, bmax, fix later
+                        meshblock.data += b'\0' * 24 # bmin, bmax, fix later
                         meshblock.data += sr_io.int2str(mesh.boneLink)
                         meshblock.write(f)
 
                         # vertex data
                         vertblock = sr_io.FileBlock()
-                        vertblock.name = 'vrts'
+                        vertblock.name = b'vrts'
                         vertblock.data += sr_io.int2str(idx)
                         for v in mesh.verts:
                                 vertblock.data += sr_io.float2str(v.data[0])
@@ -143,23 +145,24 @@ class S2Model:
 
                         if(mesh.boneLink == -1):
                                 print('skinning')
-                                # skinning data
-                                linkblock = sr_io.FileBlock()
-                                linkblock.name = 'lnk1' # blended skinning always ?
-                                linkblock.data += sr_io.int2str(idx)
-                                linkblock.data += sr_io.int2str(len(mesh.verts))
                                 for bl in self.blendedLinks[idx]:
-                                        linkblock.data += sr_io.int2str(len(bl.weights))
-                                        for w in bl.weights:
-                                                linkblock.data += sr_io.float2str(w)
-                                        for i in bl.indexes:
-                                                linkblock.data += sr_io.int2str(i)
-                                linkblock.write(f)
+                                        # skinning data
+                                        linkblock = sr_io.FileBlock()
+                                        linkblock.name = b'lnk1' # blended skinning always ?
+                                        linkblock.data += sr_io.int2str(idx)
+                                        linkblock.data += sr_io.int2str(len(mesh.verts))
+                                        for bw in bl.links:
+                                                linkblock.data += sr_io.int2str(bw.numWeights)
+                                                for w in bw.weights:
+                                                        linkblock.data += sr_io.float2str(w)
+                                                for i in bw.indexes:
+                                                        linkblock.data += sr_io.int2str(i)
+                                        linkblock.write(f)
                                 print('end skinning')
 
                         # face data
                         faceblock = sr_io.FileBlock()
-                        faceblock.name = 'face'
+                        faceblock.name = b'face'
                         faceblock.data += sr_io.int2str(idx)
                         faceblock.data += sr_io.int2str(len(mesh.faces))
                         for face in mesh.faces:
@@ -170,7 +173,7 @@ class S2Model:
 
                         # texture coords
                         texcblock = sr_io.FileBlock()
-                        texcblock.name = 'texc'
+                        texcblock.name = b'texc'
                         texcblock.data += sr_io.int2str(idx)
                         for v in mesh.verts:
                                 texcblock.data += sr_io.float2str(v.texcoord[0])
@@ -179,16 +182,16 @@ class S2Model:
 
                         # vertex colours
                         colourblock = sr_io.FileBlock()
-                        colourblock.name = 'colr'
+                        colourblock.name = b'colr'
                         colourblock.data += sr_io.int2str(idx)
                         for v in mesh.verts:
                                 for i in range(4):
-                                        colourblock.data += sr_io.int2str(int(v.color.data[i] * 255.0))[0]
+                                        colourblock.data += sr_io.int2str(int(v.color.data[i] * 255.0))[0].to_bytes(1, 'big')
                         colourblock.write(f)
 
                         # normals
                         normalblock = sr_io.FileBlock()
-                        normalblock.name = 'nrml'
+                        normalblock.name = b'nrml'
                         normalblock.data += sr_io.int2str(idx)
                         for v in mesh.verts:
                                 normalblock.data += sr_io.float2str(v.normal.data[0])
@@ -201,7 +204,7 @@ class S2Model:
                         if surf.version > 3:
                                 continue
                         surfblock = sr_io.FileBlock()
-                        surfblock.name = 'surf'
+                        surfblock.name = b'surf'
                         surfblock.data += sr_io.int2str(i) # surf id
                         surfblock.data += sr_io.int2str(len(surf.planes))
                         for j in range(3):

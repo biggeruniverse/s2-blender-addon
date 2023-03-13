@@ -39,7 +39,7 @@ class S2Exporter(bpy.types.Operator, ExportHelper):
 
       print("Exporting")
       # Now start exporting the target object.
-      mdl = translate.fromBlender(obj_name!="")
+      mdl = translate.fromBlender(self.obj_name!="")
       mdl.saveFile(self.filepath)
       # Parse all the objects in the scene.
       print("Finished")

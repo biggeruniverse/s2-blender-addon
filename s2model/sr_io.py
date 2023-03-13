@@ -25,7 +25,7 @@ def writepadded(file, s, pad):
 
 class FileBlock:
     def __init__(self):
-        self.name = "null";
+        self.name = b"null";
         self.length = 0;
         self.pos = 0;
         self.data = b'';
