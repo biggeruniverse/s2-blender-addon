@@ -79,13 +79,17 @@ def toBlender(model):
     skel = bpy.data.armatures[-1]
 
     #create the bones if any
+    bone_map = {}
+    bcount = 1
     if model.bones:
         jointls = []
         bonels = [None] * len(model.bones)
         
         for bone in model.bones:
             if bone.parent == None:
-                bn = skel.edit_bones.new(bone.name)
+                bone_map[bone.idx] = 0
+                bn = skel.edit_bones[0]
+                bn.name = bone.name
                 bn.matrix = [[bone.base.axis[0].data[0], bone.base.axis[0].data[1], bone.base.axis[0].data[2], 0.0],
                                                 [bone.base.axis[1].data[0], bone.base.axis[1].data[1], bone.base.axis[1].data[2], 0.0],
                                                 [bone.base.axis[2].data[0], bone.base.axis[2].data[1], bone.base.axis[2].data[2], 0.0],
@@ -98,9 +102,11 @@ def toBlender(model):
                     jointls.append((child, bn, bone))
 
         for joint in jointls:
-            print("child bone "+bone.name)
             bone = joint[0]
             bn = skel.edit_bones.new(bone.name)
+            bone_map[bone.idx] = bcount
+            print("child bone "+bone.name+" "+str(bcount))
+            bcount += 1
             bn.parent = joint[1]
             bn.matrix = [[bone.base.axis[0].data[0], bone.base.axis[0].data[1], bone.base.axis[0].data[2], 0.0],
                             [bone.base.axis[1].data[0], bone.base.axis[1].data[1], bone.base.axis[1].data[2], 0.0],
@@ -117,7 +123,7 @@ def toBlender(model):
 
     skel.transform(mathutils.Matrix.Rotation(math.radians(180.0), 4, 'Z'))            
     
-    
+    print("skel set: "+str([bone.name for bone in skel.edit_bones]))
     #create mesh objects
     for idx, m in enumerate(model.meshes):
         mesh = bpy.data.objects.new(m.name, meshToBlender(m, model, idx, skel))
@@ -138,8 +144,11 @@ def toBlender(model):
                         bone_set.add(b)
 
             bone_set = list(bone_set) #the ol' switcharoo!
+            print("bone set: "+str(bone_set))
             for bone in bone_set:
-                mesh.vertex_groups.new(name=skel.edit_bones[bone].name)
+                bname = skel.edit_bones[bone_map[bone]].name
+                print("group named "+bname)
+                mesh.vertex_groups.new(name=bname)
             #blended links stuff
             for grp in model.blendedLinks[idx]:
                 for i,bw in enumerate(grp.links):
@@ -204,15 +213,13 @@ def fromBlender(useSelection = False):
 
     #capture the skeleton
     skel = bpy.data.armatures[-1]
-    for bone in skel.bones:
-        if bone.name == 'Bone' or bone.name == 'Scene_Root':
-            continue
+    for bone in skel.bones[1:]:
         bn = Bone()
-        bn.base = matrix.fromBlenderMatrix(bone.matrix+[bone.head[0],bone.head[1],bone.head[2]])
+        bn.base = matrix.fromBlenderMatrix([list(i) for i in bone.matrix]+[[bone.head[0],bone.head[1],bone.head[2],1.0]])
         bn.invBase = matrix.matrix43_t()
         bn.idx = len(mdl.bones)
         bn.name = bone.name
-        bn.parent = skel.bones.find(bone.parent)-1
+        bn.parent = skel.bones.find(bone.parent.name)
         mdl.bones.append(bn)
 
     mcount = 0
