@@ -26,6 +26,13 @@ class S2Model:
                 self.surfs = []
                 self.filepath = "."
 
+        def find_bone(self, name):
+                #god damn this is disgusting...
+                for i, bone in enumerate(self.bones):
+                        if bone.name == name:
+                                return i
+                return -1
+
         def loadFile(self, filename):
                 self.filepath = filename
                 size = os.path.getsize(filename)
@@ -201,8 +208,8 @@ class S2Model:
 
                 for i in range(len(self.surfs)):
                         surf = self.surfs[i]
-                        if surf.version > 3:
-                                continue
+                        #if surf.version > 3:
+                        #        continue
                         surfblock = sr_io.FileBlock()
                         surfblock.name = b'surf'
                         surfblock.data += sr_io.int2str(i) # surf id

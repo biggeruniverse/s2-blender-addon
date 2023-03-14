@@ -1,3 +1,5 @@
+# (c) 2023 DRX Dev Team
+
 import os,sys,mathutils,math
 
 import bpy
@@ -19,6 +21,7 @@ def meshToBlender(mesh, model, midx, skel):
     blmesh.vertices.add(mesh.numVerts)
 
     blmesh.vertices.foreach_set("co", [a for v in mesh.verts for a in (v.data[0], v.data[1], v.data[2])])
+    blmesh.vertices.foreach_set("normal", [a for v in mesh.verts for a in (v.normal.data[0], v.normal.data[1], v.normal.data[2])]) 
 
     loops = []
     faces_loop_start = []
@@ -105,7 +108,6 @@ def toBlender(model):
             bone = joint[0]
             bn = skel.edit_bones.new(bone.name)
             bone_map[bone.idx] = bcount
-            print("child bone "+bone.name+" "+str(bcount))
             bcount += 1
             bn.parent = joint[1]
             bn.matrix = [[bone.base.axis[0].data[0], bone.base.axis[0].data[1], bone.base.axis[0].data[2], 0.0],
@@ -123,7 +125,6 @@ def toBlender(model):
 
     skel.transform(mathutils.Matrix.Rotation(math.radians(180.0), 4, 'Z'))            
     
-    print("skel set: "+str([bone.name for bone in skel.edit_bones]))
     #create mesh objects
     for idx, m in enumerate(model.meshes):
         mesh = bpy.data.objects.new(m.name, meshToBlender(m, model, idx, skel))
@@ -144,10 +145,8 @@ def toBlender(model):
                         bone_set.add(b)
 
             bone_set = list(bone_set) #the ol' switcharoo!
-            print("bone set: "+str(bone_set))
             for bone in bone_set:
                 bname = skel.edit_bones[bone_map[bone]].name
-                print("group named "+bname)
                 mesh.vertex_groups.new(name=bname)
             #blended links stuff
             for grp in model.blendedLinks[idx]:
@@ -162,10 +161,12 @@ def toBlender(model):
         if surf.mesh is None:
             #FIXME: the surface_t.toMesh() function doesn't actually work.
             surf.toMesh()
-        blmesh = meshToBlender(surf.mesh, model)
-        bpy.data.objects.new("_surf%03d" % i, blmesh)
-        blmesh.parent = parent
-        bpy.context.collection.objects.link(blmesh)
+        blmesh = meshToBlender(surf.mesh, model, i, skel)
+        surf = bpy.data.objects.new("_surf%03d" % i, blmesh)
+        surf.parent = parent
+        bpy.context.collection.objects.link(surf)
+
+    bpy.ops.object.editmode_toggle()
 
 def addMesh(mdl, item, i, bones):
     print("Adding mesh "+str(i))
@@ -174,8 +175,9 @@ def addMesh(mdl, item, i, bones):
     #mesh.texture = item.texture
     for i,vert in enumerate(item.data.vertices):
         v = Vertex()
-        v.data = [item.data.vertices[i].co[0], item.data.vertices[i].co[2], -item.data.vertices[1].co[1]]
-        v.normal.data = [item.data.vertices[i].normal[0], item.data.vertices[i].normal[2], -item.data.vertices[1].normal[1]]
+        v.data = [item.data.vertices[i].co[0], -item.data.vertices[i].co[2], item.data.vertices[i].co[1]]
+        v.normal.data = [item.data.vertices[i].normal[0], -item.data.vertices[i].normal[2], item.data.vertices[i].normal[1]]
+        v.texcoord = [item.data.uv_layers[0].data[i].uv[0], 1.0-item.data.uv_layers[0].data[i].uv[1]]
         mesh.verts.append(v)
     mesh.numVerts = len(mesh.verts)
 
@@ -187,17 +189,29 @@ def addMesh(mdl, item, i, bones):
         mesh.faces.append(f)
         mesh.numFaces = len(mesh.faces)
 
-    #FIXME: if we've only got one bone, it's a rigid mesh, not blended
-    mesh.blend = True
-    blList = blendedLinkGroup()
-    blList.mesh = i
+    print(str(len(item.vertex_groups))+" vgs")
 
+    if len(item.vertex_groups) > 1:
+        mesh.blend = True
+        for vg in item.vertex_groups:
+            blList = blendedLinkGroup()
+            blList.mesh = i
+
+            mdl.blendedLinks[-1].append(blList)
+    elif len(item.vertex_groups) == 1:
+        mesh.boneLink = mdl.find_bone(item.vertex_groups[0].name)
+        print("Linked to bone "+str(mesh.boneLink))
     mdl.meshes.append(mesh)
-    mdl.blendedLinks[-1].append(blList)
 
 def addSurf(mdl, item):
+    if len(item.data.polygons) > 128:
+        print('Warning: skipping surface ' + item.name + ', number of faces exceeds 128')
+        return
     surf = surface_t()
-    #TODO: get the surf mesh and turn it into a set of planes
+    for poly in item.data.polygons:
+        plane = surface.plane_t()
+        plane.normal.data = [poly.normal[0],-poly.normal[2],poly.normal[1]]
+        plane.distance = poly.area
     mdl.surfs.append(surf)
 
 def fromBlender(useSelection = False):
