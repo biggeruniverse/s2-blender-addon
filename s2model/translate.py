@@ -65,6 +65,8 @@ def meshToBlender(mesh, model, midx, skel):
         #for face in blmesh.uv_textures[0].data:
         #    face.image = image
 
+    blmesh.transform(mathutils.Matrix.Rotation(math.radians(180.0), 4, 'Z'))
+
     return blmesh
 
 def toBlender(model):
@@ -123,7 +125,7 @@ def toBlender(model):
             for child in bone.children:
                 jointls.append((child, bn, bone))
 
-    skel.transform(mathutils.Matrix.Rotation(math.radians(180.0), 4, 'Z'))            
+    #skel.transform(mathutils.Matrix.Rotation(math.radians(180.0), 4, 'Z'))            
     
     #create mesh objects
     for idx, m in enumerate(model.meshes):
@@ -172,18 +174,29 @@ def addMesh(mdl, item, i, bones):
     print("Adding mesh "+str(i))
     mesh = Mesh()
     mesh.name = item.name
-    #mesh.texture = item.texture
-    for i,vert in enumerate(item.data.vertices):
+    blmesh = item.data
+
+    for slot in item.material_slots:
+        if slot.material and slot.material.use_nodes:
+            for n in slot.material.node_tree.nodes:
+                if n.type == 'TEX_IMAGE':
+                    mesh.texture = bpy.path.display_name_from_filepath(n.image.filepath) + ".tga"
+                    break
+
+    for i,vert in enumerate(blmesh.vertices):
         v = Vertex()
-        v.data = [item.data.vertices[i].co[0], -item.data.vertices[i].co[2], item.data.vertices[i].co[1]]
-        v.normal.data = [item.data.vertices[i].normal[0], -item.data.vertices[i].normal[2], item.data.vertices[i].normal[1]]
-        v.texcoord = [item.data.uv_layers[0].data[i].uv[0], 1.0-item.data.uv_layers[0].data[i].uv[1]]
+        v.data = [blmesh.vertices[i].co[0], blmesh.vertices[i].co[1], blmesh.vertices[i].co[2]]
+        v.normal.data = [blmesh.vertices[i].normal[0], blmesh.vertices[i].normal[1], blmesh.vertices[i].normal[2]]
+        v.texcoord = [blmesh.uv_layers[0].data[i].uv[0], 1.0-blmesh.uv_layers[0].data[i].uv[1]]
         mesh.verts.append(v)
     mesh.numVerts = len(mesh.verts)
 
-    for face in item.data.polygons:
+    blmesh.calc_loop_triangles()
+
+    for face in blmesh.loop_triangles:
         verts_in_face = face.vertices[:]
         f = Face()
+        f.data = []
         for vert in verts_in_face:
             f.data.append(vert)
         mesh.faces.append(f)
