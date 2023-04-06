@@ -409,6 +409,7 @@ class S2Model:
                         pos += 4
                     p.distance = sr_io.endianfloat(block.data[pos:pos+4])
                     pos += 4
+                    surf.planes.append(p)
                 surf.flags = sr_io.endianint(block.data[pos:pos+4])
 
                 self.surfs[idx] = surf

@@ -162,10 +162,10 @@ def toBlender(model):
     for i, surf in enumerate(model.surfs):
         if surf.mesh is None:
             #FIXME: the surface_t.toMesh() function doesn't actually work.
-            surf.toMesh()
+            surf.toBlender()
         blmesh = meshToBlender(surf.mesh, model, i, skel)
         surf = bpy.data.objects.new("_surf%03d" % i, blmesh)
-        surf.parent = parent
+        surf.hide_render = True
         bpy.context.collection.objects.link(surf)
 
     bpy.ops.object.editmode_toggle()
@@ -185,24 +185,25 @@ def addMesh(mdl, item, i, bones):
 
     for i,vert in enumerate(blmesh.vertices):
         v = Vertex()
-        v.data = [blmesh.vertices[i].co[0], blmesh.vertices[i].co[1], blmesh.vertices[i].co[2]]
-        v.normal.data = [blmesh.vertices[i].normal[0], blmesh.vertices[i].normal[1], blmesh.vertices[i].normal[2]]
+        v.data = [vert.co[0], vert.co[1], vert.co[2]]
+        v.normal.data = [vert.normal[0], vert.normal[1], vert.normal[2]]
         v.texcoord = [blmesh.uv_layers[0].data[i].uv[0], 1.0-blmesh.uv_layers[0].data[i].uv[1]]
         mesh.verts.append(v)
     mesh.numVerts = len(mesh.verts)
 
     blmesh.calc_loop_triangles()
 
+    uv_layer = blmesh.uv_layers[0]
     for face in blmesh.loop_triangles:
-        verts_in_face = face.vertices[:]
         f = Face()
         f.data = []
-        for vert in verts_in_face:
-            f.data.append(vert)
+        for i in range(3):
+            f.data.append(face.vertices[i])
+            mesh.verts[face.vertices[i]].texcoord = [uv_layer.data[face.loops[i]].uv[0], 1.0-uv_layer.data[face.loops[i]].uv[1]]
         mesh.faces.append(f)
         mesh.numFaces = len(mesh.faces)
 
-    print(str(len(item.vertex_groups))+" vgs")
+    #print(str(len(item.vertex_groups))+" vgs")
 
     if len(item.vertex_groups) > 1:
         mesh.blend = True
@@ -222,10 +223,21 @@ def addSurf(mdl, item):
         return
     surf = surface_t()
     for poly in item.data.polygons:
-        plane = surface.plane_t()
-        plane.normal.data = [poly.normal[0],-poly.normal[2],poly.normal[1]]
-        plane.distance = poly.area
-    mdl.surfs.append(surf)
+        verts = item.data.vertices
+        plane = plane_t()
+        plane.normal.data = [poly.normal[0],poly.normal[1],poly.normal[2]]
+        plane.distance = poly.normal.dot(verts[poly.vertices[0]].co)
+        surf.planes.append(plane)
+        surf.bmin.data = list(verts[poly.vertices[0]].co)
+        surf.bmax.data = list(verts[poly.vertices[0]].co)
+        for v in poly.vertices[1:]:
+            for i in range(3):
+                if verts[v].co[i] < surf.bmin.data[i]:
+                    surf.bmin.data[i] = verts[v].co[i]
+                if verts[v].co[i] > surf.bmax.data[i]:
+                    surf.bmax.data[i] = verts[v].co[i]
+    if len(surf.planes) > 3:
+        mdl.surfs.append(surf)
 
 def fromBlender(useSelection = False):
     mdl = model.S2Model()

@@ -53,9 +53,10 @@ class Vec3:
 	def normalise( self ):
 		length = self.size(); #a float, make sure you don't normalise the zero vector
 		#unrolling loops is faster
-		self.data[0] /= length;
-		self.data[1] /= length;
-		self.data[2] /= length;
+		if length > 0:
+			self.data[0] /= length;
+			self.data[1] /= length;
+			self.data[2] /= length;
 		return self;
 	
 	def dot( self, other):
@@ -106,6 +107,9 @@ class Vec3:
 	def distanceSqTo( self, other):
 		#the square of distanceTo, to save sqrt computation
 		return (self.data[0] - other.data[0])**2 + (self.data[1] - other.data[1])**2 + (self.data[2] - other.data[2])**2;
+
+	def mult(self, other):
+		return Vec3(self.data[0]*other.data[0], self.data[1]*other.data[1], self.data[2]*other.data[2])
 	
 	def __str__(self):
 		return "[" +str(self.data[0]) + "," +str(self.data[1])+ ","+ str(self.data[2]) + "]";

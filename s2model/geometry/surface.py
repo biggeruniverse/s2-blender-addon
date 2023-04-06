@@ -6,6 +6,8 @@ from .mesh import Mesh
 from .face import Face
 from .vertex import Vertex
 
+S2_SURF_SIZE_HALF = .05
+
 class line_t:
 	def __init__(self):
 		self.a = Vec3(0.0, 0.0, 0.0)
@@ -21,12 +23,17 @@ class line_t:
 			return None
 		
 		c = da.cross(db)
+		if c.size2() == 0.0:
+                        return None
 		s = (dc.cross(db) * c) / c.size2()
 		
 		if s >= 0.0 and s <= 1.0:
 			return self.x0 + da * s
 			
 		return None
+
+	def __str__(self):
+                return str(self.x0) + " to " + str(self.x1)
 
 class plane_t:
 	def __init__(self):
@@ -52,6 +59,59 @@ class surface_t:
 		self.bmin = Vec3(0.0, 0.0, 0.0)
 		self.bmax = Vec3(0.0, 0.0, 0.0)
 
+	def toBlender(self):
+		self.mesh = Mesh()
+		
+		for p0 in self.planes:
+			f = Face()
+			f.data = []
+			v = p0.normal * p0.distance
+			c = Vec3(0.0, 0.0, 1.0)
+			if p0.normal == c:
+				c = Vec3(0.0, 1.0, 0.0)
+			print(str(p0.normal) + " * " + str(p0.distance))
+			axis_x = p0.normal.cross(c)
+			axis_y = p0.normal.cross(axis_x)
+
+			print(axis_x)
+			print(axis_y)
+
+			axis_x.normalise()
+			axis_y.normalise()
+
+			p = Vec3(v.data)
+			p = p + axis_x * S2_SURF_SIZE_HALF
+			p = p + axis_y * S2_SURF_SIZE_HALF
+			vert = Vertex()
+			vert.data = p.data[:]
+			self.mesh.verts.append(vert)
+			f.data.append(len(self.mesh.verts)-1)
+			p = Vec3(v.data)
+			p = p - axis_x * S2_SURF_SIZE_HALF
+			p = p + axis_y * S2_SURF_SIZE_HALF
+			vert = Vertex()
+			vert.data = p.data[:]
+			self.mesh.verts.append(vert)
+			f.data.append(len(self.mesh.verts)-1)
+			p = Vec3(v.data)
+			p = p - axis_x * S2_SURF_SIZE_HALF
+			p = p - axis_y * S2_SURF_SIZE_HALF
+			vert = Vertex()
+			vert.data = p.data[:]
+			self.mesh.verts.append(vert)
+			f.data.append(len(self.mesh.verts)-1)
+			p = Vec3(v.data)
+			p = p + axis_x * S2_SURF_SIZE_HALF
+			p = p - axis_y * S2_SURF_SIZE_HALF
+			vert = Vertex()
+			vert.data = p.data[:]
+			self.mesh.verts.append(vert)
+			f.data.append(len(self.mesh.verts)-1)
+			
+			self.mesh.faces.append(f)
+		self.mesh.numVerts = len(self.mesh.verts)
+		self.mesh.numFaces = len(self.mesh.faces)
+
 	#this function is only used to convert old-style surf plane defs to meshes
 	def toMesh(self):
 		self.mesh = Mesh()
@@ -60,7 +120,7 @@ class surface_t:
 			edges = []
 			facePoints = []
 			
-			for p1 in [e for e in self.planes if p1 is not p0]:
+			for p1 in [sp for sp in self.planes if sp is not p0]:
 				#solve the intersection line, append it to edges
 				
 				l = line_t()
@@ -78,19 +138,18 @@ class surface_t:
 				x1 = p1.normal * p1.distance
 				x2 = p2.normal * p2.distance
 				
-				det = Vec3(1/(p0.normal.data[0] * p1.normal.data[0] * p2.normal.data[0]),
-						1/(p0.normal.data[1] * p1.normal.data[1] * p2.normal.data[1]),
-						1/(p0.normal.data[2] * p1.normal.data[2] * p2.normal.data[2]))
+				det = Vec3(1/max(1.0, p0.normal.data[0] * p1.normal.data[0] * p2.normal.data[0]),
+						1/max(1.0, p0.normal.data[1] * p1.normal.data[1] * p2.normal.data[1]),
+						1/max(1.0, p0.normal.data[2] * p1.normal.data[2] * p2.normal.data[2]))
 						
 				l.x0 = det * (x0.mult(p0.normal) * p1.normal.cross(p2.normal) + x1.mult(p1.normal) * p2.normal.cross(p0.normal) + x2.mult(p2.normal) * p0.normal.cross(p1.normal))
 				
-				l.x1 = l.x0 + l.a * 5000.0 #arbitrary
-				l.x0 = l.x0 - l.a * 5000.0
-				
+				l.x1 = l.x0 + l.a * 1000.0 #arbitrary
+				l.x0 = l.x0 - l.a * 1000.0
 				edges.append(l)
 
 			for l0 in edges:
-				for l1 in [e for e in edges if l1 is not l0]:
+				for l1 in [e for e in edges if e is not l0]:
 					#solve for the intersection point between the edges, if there is one.
 					v = l0.intersection(l1)
 					if v is None:
@@ -102,23 +161,16 @@ class surface_t:
 						if vert == v:
 							facePoints.append(i)
 							newVert = False
+							break
 					if newVert:
-						print(v)
-						self.mesh.verts.append(v)
+						vert = Vertex()
+						vert.data = v.data[:]
+						self.mesh.verts.append(vert)
 						facePoints.append(len(self.mesh.verts)-1)
 			
 			#create the faces of the mesh
-			i=1
-			j=1
 			face = Face()
-			while i<len(facePoints):
-				face.data[j] = facePoints[i]
-				j=j+1
-				if j == 3:
-					j=1
-					face.data[0] = facePoints[0]
-					self.mesh.faces.append(face)
-					face = Face()
-					continue
-				i=i+1
-				
+			face.data = facePoints[:]
+			self.mesh.faces.append(face)
+		self.mesh.numFaces = len(self.mesh.faces)
+		self.mesh.numVerts = len(self.mesh.verts)
