@@ -33,6 +33,18 @@ class S2Model:
                                 return i
                 return -1
 
+        def _bone_parent_index(self, bone):
+                """Return the integer parent index for a bone, regardless of
+                whether bone.parent is already an int (fromBlender path) or a
+                Bone object (loadFile path)."""
+                p = bone.parent
+                if p is None:
+                        return -1
+                if isinstance(p, int):
+                        return p
+                # It's a Bone object - find its index
+                return p.idx
+
         def loadFile(self, filename):
                 self.filepath = filename
                 size = os.path.getsize(filename)
@@ -40,22 +52,22 @@ class S2Model:
                 filehead = file.read(4)
                 if filehead != b'SMDL':
                         raise Exception("not a valid S2 model file! ("+str(filehead)+")")
-		# chunk the file out into blocks
+                # chunk the file out into blocks
                 while file.tell()+8 < size:
                         block = sr_io.FileBlock()
                         block.read(file, size)
                         self.blocks.append(block)
-		# done with this
+                # done with this
                 file.close()
-		
-		#the header block comes first, but the order of 
-		#other blocks isn't important to the file
+
+                #the header block comes first, but the order of 
+                #other blocks isn't important to the file
                 self.handleHeaderBlock(self.blocks[0])
-		
-		# make sure to handle bones first, so that we have something to link verts to
+
+                # make sure to handle bones first, so that we have something to link verts to
                 self.handleBoneBlock(self.blocks[1])
-		
-		#TODO: Blender-specific stuff to put bones in the scene
+
+                #TODO: Blender-specific stuff to put bones in the scene
 
                 for block in self.blocks[2:]:
                         if block.name == "vrts":
@@ -92,16 +104,16 @@ class S2Model:
                 f.write(sr_io.int2str(len(self.bones)))
                 f.write(b'\0' * 24) # bmin, bmax, fix later
 
+                # Bone block
                 boneblock = sr_io.FileBlock()
                 boneblock.name = b'bone'
                 for bone in self.bones:
-                        boneblock.data += sr_io.int2str(bone.parent)
-                        for i in range(Bone.NAME_LENGTH):
-                                name = bone.name.encode()
-                                if i < len(name):
-                                        boneblock.data += name[i].to_bytes(1, 'big')
-                                else:
-                                        boneblock.data += b'\0'
+                        # FIX: bone.parent can be a Bone object (load path) or int (fromBlender path)
+                        parent_idx = self._bone_parent_index(bone)
+                        boneblock.data += sr_io.int2str(parent_idx)
+                        name_bytes = bone.name[:Bone.NAME_LENGTH].encode('utf-8') if isinstance(bone.name, str) else bone.name[:Bone.NAME_LENGTH]
+                        boneblock.data += name_bytes
+                        boneblock.data += bytes(b'\0' * Bone.NAME_LENGTH-len(name_bytes))
                         for c in range(3):
                                 for a in range(3):
                                         boneblock.data += sr_io.float2str(bone.invBase.axis[c].data[a])
@@ -119,28 +131,23 @@ class S2Model:
                 boneblock.write(f)
 
                 for idx, mesh in enumerate(self.meshes):
+                        # Mesh block
                         meshblock = sr_io.FileBlock()
                         meshblock.name = b'mesh'
                         meshblock.data += sr_io.int2str(idx)
-                        name = mesh.name.encode()
-                        tex = mesh.texture.encode()
-                        for i in range(Mesh.NAME_LENGTH):
-                                if i < len(mesh.name):
-                                        meshblock.data += name[i].to_bytes(1, 'big')
-                                else:
-                                        meshblock.data += b'\0'
-                        for i in range(64):
-                                if i < len(mesh.texture):
-                                        meshblock.data += tex[i].to_bytes(1, 'big')
-                                else:
-                                        meshblock.data += b'\0'
-                        meshblock.data += sr_io.int2str(1) # mode, fix later
+                        name_bytes = mesh.name[:Mesh.NAME_LENGTH].encode('utf-8') if isinstance(mesh.name, str) else mesh.name[:Mesh.NAME_LENGTH]
+                        tex_bytes  = mesh.texture[:Mesh.TEX_NAME_LENGTH].encode('utf-8') if isinstance(mesh.texture, str) else mesh.texture[:Mesh.TEX_NAME_LENGTH]
+                        meshblock.data += name_bytes
+                        meshblock.data += bytes(b'\0' * Mesh.NAME_LENGTH-len(name_bytes))
+                        meshblock.data += tex_bytes
+                        meshblock.data += bytes(b'\0' * Mesh.TEX_NAME_LENGTH-len(tex_bytes))
+                        meshblock.data += sr_io.int2str(1)                    # mode
                         meshblock.data += sr_io.int2str(len(mesh.verts))
                         meshblock.data += b'\0' * 24 # bmin, bmax, fix later
                         meshblock.data += sr_io.int2str(mesh.boneLink)
                         meshblock.write(f)
 
-                        # vertex data
+                        # Vertex block
                         vertblock = sr_io.FileBlock()
                         vertblock.name = b'vrts'
                         vertblock.data += sr_io.int2str(idx)
@@ -150,10 +157,10 @@ class S2Model:
                                 vertblock.data += sr_io.float2str(v.data[2])
                         vertblock.write(f)
 
-                        if(mesh.boneLink == -1):
-                                print('skinning')
+                        # Blended skinning block (only for skinned meshes)
+                        if mesh.boneLink == -1:
+                                print('skinning mesh', idx)
                                 for bl in self.blendedLinks[idx]:
-                                        # skinning data
                                         linkblock = sr_io.FileBlock()
                                         linkblock.name = b'lnk1' # blended skinning always ?
                                         linkblock.data += sr_io.int2str(idx)
@@ -162,12 +169,11 @@ class S2Model:
                                                 linkblock.data += sr_io.int2str(bw.numWeights)
                                                 for w in bw.weights:
                                                         linkblock.data += sr_io.float2str(w)
-                                                for i in bw.indexes:
-                                                        linkblock.data += sr_io.int2str(i)
+                                                for bi in bw.indexes:
+                                                        linkblock.data += sr_io.int2str(bi)
                                         linkblock.write(f)
-                                print('end skinning')
 
-                        # face data
+                        # Face block
                         faceblock = sr_io.FileBlock()
                         faceblock.name = b'face'
                         faceblock.data += sr_io.int2str(idx)
@@ -178,7 +184,7 @@ class S2Model:
                                 faceblock.data += sr_io.int2str(face.data[2])
                         faceblock.write(f)
 
-                        # texture coords
+                        # Texture coord block
                         texcblock = sr_io.FileBlock()
                         texcblock.name = b'texc'
                         texcblock.data += sr_io.int2str(idx)
@@ -187,16 +193,17 @@ class S2Model:
                                 texcblock.data += sr_io.float2str(v.texcoord[1])
                         texcblock.write(f)
 
-                        # vertex colours
+                        # Vertex colour block
                         colourblock = sr_io.FileBlock()
                         colourblock.name = b'colr'
                         colourblock.data += sr_io.int2str(idx)
                         for v in mesh.verts:
                                 for i in range(4):
-                                        colourblock.data += sr_io.int2str(int(v.color.data[i] * 255.0))[0].to_bytes(1, 'big')
+                                        # FIX: was indexing bytes object then calling .to_bytes — just pack directly
+                                        colourblock.data += struct.pack('B', int(v.color.data[i] * 255.0))
                         colourblock.write(f)
 
-                        # normals
+                        # Normal block
                         normalblock = sr_io.FileBlock()
                         normalblock.name = b'nrml'
                         normalblock.data += sr_io.int2str(idx)
@@ -206,34 +213,33 @@ class S2Model:
                                 normalblock.data += sr_io.float2str(v.normal.data[2])
                         normalblock.write(f)
 
-                for i in range(len(self.surfs)):
-                        surf = self.surfs[i]
+                # Surface blocks
+                for i, surf in enumerate(self.surfs):
                         #if surf.version > 3:
                         #        continue
                         surfblock = sr_io.FileBlock()
                         surfblock.name = b'surf'
-                        surfblock.data += sr_io.int2str(i) # surf id
+                        surfblock.data += sr_io.int2str(i)
                         surfblock.data += sr_io.int2str(len(surf.planes))
                         for j in range(3):
                                 surfblock.data += sr_io.float2str(surf.bmin.data[j])
                                 surfblock.data += sr_io.float2str(surf.bmax.data[j])
-                        
                         for plane in surf.planes:
                                 for j in range(3):
                                         surfblock.data += sr_io.float2str(plane.normal.data[j])
                                 surfblock.data += sr_io.float2str(plane.distance)
-                        surfblock.data += sr_io.int2str(surf.flags) # flags
+                        surfblock.data += sr_io.int2str(surf.flags)
                         surfblock.write(f)
 
                 f.close()
-		
+                print("Saved", filename)
+
         def handleHeaderBlock(self, block):
                 if block.name != "head":
                         raise Exception("Not a valid model file!")
                 self.version = sr_io.endianint(block.data[0:4])
-                if self.version<1 or self.version > 3:
+                if self.version < 1 or self.version > 3:
                         raise Exception("Bad version "+str(self.version))
-
                 numMeshes = sr_io.endianint(block.data[4:8])
                 self.meshes = [None] * numMeshes
                 #sprites do we care?
@@ -248,37 +254,34 @@ class S2Model:
 
         def handleBoneBlock(self, block):
                 offset = 0
-		
                 for i in range(len(self.bones)):
                         bone = self.bones[i]
                         bone.idx = i
                         parent = sr_io.endianint(block.data[offset:offset+4])
-                        offset+=4
-                        bone.name = block.data[offset:offset+Bone.NAME_LENGTH].decode('utf-8')
+                        offset += 4
+                        bone.name = block.data[offset:offset+Bone.NAME_LENGTH].decode('utf-8').rstrip('\x00')
                         offset += Bone.NAME_LENGTH
                         #print str(parent) + "bone "+str(i)+" "+bone.name+" "+str(parent)
                         if parent >= 0 and parent < len(self.bones):
                                 bone.parent = self.bones[parent]
                                 self.bones[parent].add(bone)
-			#self.bones.append(bone)
-                                
+                                #self.bones.append(bone)
                         for c in range(3):
                                 for a in range(3):
                                         bone.invBase.axis[c].data[a] = sr_io.endianfloat(block.data[offset:offset+4])
                                         offset += 4
                                 offset += 4
                         for c in range(3):
-                                bone.invBase.pos.data[c] = sr_io.endianfloat(block.data[offset:offset+4])# * 0.4
+                                bone.invBase.pos.data[c] = sr_io.endianfloat(block.data[offset:offset+4])
                                 offset += 4
                         offset += 4
-                        
                         for c in range(3):
                                 for a in range(3):
                                         bone.base.axis[c].data[a] = sr_io.endianfloat(block.data[offset:offset+4])
                                         offset += 4
                                 offset += 4
                         for c in range(3):
-                                bone.base.pos.data[c] = sr_io.endianfloat(block.data[offset:offset+4])# * 0.4
+                                bone.base.pos.data[c] = sr_io.endianfloat(block.data[offset:offset+4])
                                 offset += 4
                         offset += 4
 
@@ -318,7 +321,7 @@ class S2Model:
                 offset += 6 * 4 #skip bounding box
                 mesh.boneLink = sr_io.endianint(block.data[offset:offset+4])
                 self.meshes[meshIndex] = mesh
-	
+
         def handleFaceBlock(self, block):
                 offset = 8
                 meshIndex = sr_io.endianint(block.data[0:4])
@@ -342,7 +345,7 @@ class S2Model:
                 offset = 4
                 meshIndex = sr_io.endianint(block.data[0:4])
                 for i in range(self.meshes[meshIndex].numVerts):
-                        v = Vec3(0,0,0)
+                        v = Vec3(0, 0, 0)
                         for j in range(3):
                                 v.data[j] = sr_io.endianfloat(block.data[offset:offset+4])
                                 offset += 4
@@ -359,9 +362,8 @@ class S2Model:
                         offset += 4
                         v = sr_io.endianfloat(block.data[offset:offset+4])
                         offset += 4
-                        self.meshes[meshIndex].verts[i].texcoord = [u,v]
+                        self.meshes[meshIndex].verts[i].texcoord = [u, v]
 
-        # vertex colors
         def handleColorBlock(self, block):
                 offset = 4
                 meshIndex = sr_io.endianint(block.data[0:4])
@@ -373,7 +375,6 @@ class S2Model:
                 meshIndex = sr_io.endianint(block.data[0:4])
                 numVerts = sr_io.endianint(block.data[4:8])
                 pos = 8
-
                 bl = blendedLinkGroup()
                 bl.mesh = meshIndex
                 for i in range(numVerts):
@@ -395,21 +396,18 @@ class S2Model:
                 idx = sr_io.endianint(block.data[0:4])
                 numPlanes = sr_io.endianint(block.data[4:8])
                 pos = 8
-
                 for i in range(3):
-                    surf.bmin.data[i] = sr_io.endianfloat(block.data[pos:pos+4])
-                    pos += 4
-                    surf.bmax.data[i] = sr_io.endianfloat(block.data[pos:pos+4])
-                    pos += 4
-                
-                for i in range(numPlanes):
-                    p = plane_t()
-                    for j in range(3):
-                        p.normal.data[j] = sr_io.endianfloat(block.data[pos:pos+4])
+                        surf.bmin.data[i] = sr_io.endianfloat(block.data[pos:pos+4])
                         pos += 4
-                    p.distance = sr_io.endianfloat(block.data[pos:pos+4])
-                    pos += 4
-                    surf.planes.append(p)
+                        surf.bmax.data[i] = sr_io.endianfloat(block.data[pos:pos+4])
+                        pos += 4
+                for i in range(numPlanes):
+                        p = plane_t()
+                        for j in range(3):
+                                p.normal.data[j] = sr_io.endianfloat(block.data[pos:pos+4])
+                                pos += 4
+                        p.distance = sr_io.endianfloat(block.data[pos:pos+4])
+                        pos += 4
+                        surf.planes.append(p)
                 surf.flags = sr_io.endianint(block.data[pos:pos+4])
-
                 self.surfs[idx] = surf
