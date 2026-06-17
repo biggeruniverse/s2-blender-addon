@@ -1,5 +1,5 @@
 # (c) 2011 savagerebirth.com
-# (c) 2023 DRX Dev Team
+# (c) 2023-2026 DRX Dev Team
 
 import os
 import struct
@@ -25,6 +25,8 @@ class S2Model:
                 self.singleLinks = []
                 self.surfs = []
                 self.filepath = "."
+                self.bmin = Vec3(1000000.0,1000000.0,1000000.0)
+                self.bmax = Vec3(-1000000.0,-1000000.0,-1000000.0)
 
         def find_bone(self, name):
                 #god damn this is disgusting...
@@ -99,10 +101,11 @@ class S2Model:
                 f.write(sr_io.int2str(44)) # block length
                 f.write(sr_io.int2str(3))
                 f.write(sr_io.int2str(len(self.meshes)))
-                f.write(sr_io.int2str(0)) # <-- add later?
+                f.write(sr_io.int2str(0)) # <-- add later? (sprite count)
                 f.write(sr_io.int2str(len(self.surfs)))
                 f.write(sr_io.int2str(len(self.bones)))
-                f.write(b'\0' * 24) # bmin, bmax, fix later
+                f.write(sr_io.float2str(self.bmin.data[0])); f.write(sr_io.float2str(self.bmin.data[1])); f.write(sr_io.float2str(self.bmin.data[2]));
+                f.write(sr_io.float2str(self.bmax.data[0])); f.write(sr_io.float2str(self.bmax.data[1])); f.write(sr_io.float2str(self.bmax.data[2]));
 
                 # Bone block
                 boneblock = sr_io.FileBlock()
@@ -113,7 +116,7 @@ class S2Model:
                         boneblock.data += sr_io.int2str(parent_idx)
                         name_bytes = bone.name[:Bone.NAME_LENGTH].encode('utf-8') if isinstance(bone.name, str) else bone.name[:Bone.NAME_LENGTH]
                         boneblock.data += name_bytes
-                        boneblock.data += bytes(b'\0' * Bone.NAME_LENGTH-len(name_bytes))
+                        boneblock.data += bytes(b'\0' * (Bone.NAME_LENGTH-len(name_bytes)))
                         for c in range(3):
                                 for a in range(3):
                                         boneblock.data += sr_io.float2str(bone.invBase.axis[c].data[a])
@@ -138,23 +141,44 @@ class S2Model:
                         name_bytes = mesh.name[:Mesh.NAME_LENGTH].encode('utf-8') if isinstance(mesh.name, str) else mesh.name[:Mesh.NAME_LENGTH]
                         tex_bytes  = mesh.texture[:Mesh.TEX_NAME_LENGTH].encode('utf-8') if isinstance(mesh.texture, str) else mesh.texture[:Mesh.TEX_NAME_LENGTH]
                         meshblock.data += name_bytes
-                        meshblock.data += bytes(b'\0' * Mesh.NAME_LENGTH-len(name_bytes))
+                        meshblock.data += bytes(b'\0' * (Mesh.NAME_LENGTH-len(name_bytes)))
                         meshblock.data += tex_bytes
-                        meshblock.data += bytes(b'\0' * Mesh.TEX_NAME_LENGTH-len(tex_bytes))
-                        meshblock.data += sr_io.int2str(1)                    # mode
+                        meshblock.data += bytes(b'\0' * (Mesh.TEX_NAME_LENGTH-len(tex_bytes)))
+                        meshblock.data += sr_io.int2str(mesh.mode)
                         meshblock.data += sr_io.int2str(len(mesh.verts))
-                        meshblock.data += b'\0' * 24 # bmin, bmax, fix later
+                        meshblock.data += sr_io.float2str(mesh.bmin.data[0]); meshblock.data += sr_io.float2str(mesh.bmin.data[1]); meshblock.data += sr_io.float2str(mesh.bmin.data[2]);
+                        meshblock.data += sr_io.float2str(mesh.bmax.data[0]); meshblock.data += sr_io.float2str(mesh.bmax.data[1]); meshblock.data += sr_io.float2str(mesh.bmax.data[2]);
                         meshblock.data += sr_io.int2str(mesh.boneLink)
                         meshblock.write(f)
 
-                        # Vertex block
+                        # Build up data blocks
                         vertblock = sr_io.FileBlock()
-                        vertblock.name = b'vrts'
+                        texcblock = sr_io.FileBlock()
+                        colourblock = sr_io.FileBlock()
+                        normalblock = sr_io.FileBlock()
                         vertblock.data += sr_io.int2str(idx)
+                        texcblock.data += sr_io.int2str(idx)
+                        colourblock.data += sr_io.int2str(idx)
+                        normalblock.data += sr_io.int2str(idx)
+
                         for v in mesh.verts:
-                                vertblock.data += sr_io.float2str(v.data[0])
-                                vertblock.data += sr_io.float2str(v.data[1])
-                                vertblock.data += sr_io.float2str(v.data[2])
+                                d = matrix.multiplyVector(yaw180, v)
+                                vertblock.data += sr_io.float2str(d.data[0])
+                                vertblock.data += sr_io.float2str(d.data[1])
+                                vertblock.data += sr_io.float2str(d.data[2])
+                                texcblock.data += sr_io.float2str(v.texcoord[0])
+                                texcblock.data += sr_io.float2str(v.texcoord[1])
+                                colourblock.data += struct.pack('B', int(v.color.data[0] * 255.0))
+                                colourblock.data += struct.pack('B', int(v.color.data[1] * 255.0))
+                                colourblock.data += struct.pack('B', int(v.color.data[2] * 255.0))
+                                colourblock.data += struct.pack('B', int(v.color.data[3] * 255.0))
+                                d = matrix.multiplyVector(yaw180, v.normal)
+                                normalblock.data += sr_io.float2str(d.data[0])
+                                normalblock.data += sr_io.float2str(d.data[1])
+                                normalblock.data += sr_io.float2str(d.data[2])
+
+                        # Vertex block
+                        vertblock.name = b'vrts'
                         vertblock.write(f)
 
                         # Blended skinning block (only for skinned meshes)
@@ -185,32 +209,15 @@ class S2Model:
                         faceblock.write(f)
 
                         # Texture coord block
-                        texcblock = sr_io.FileBlock()
                         texcblock.name = b'texc'
-                        texcblock.data += sr_io.int2str(idx)
-                        for v in mesh.verts:
-                                texcblock.data += sr_io.float2str(v.texcoord[0])
-                                texcblock.data += sr_io.float2str(v.texcoord[1])
                         texcblock.write(f)
 
                         # Vertex colour block
-                        colourblock = sr_io.FileBlock()
                         colourblock.name = b'colr'
-                        colourblock.data += sr_io.int2str(idx)
-                        for v in mesh.verts:
-                                for i in range(4):
-                                        # FIX: was indexing bytes object then calling .to_bytes — just pack directly
-                                        colourblock.data += struct.pack('B', int(v.color.data[i] * 255.0))
                         colourblock.write(f)
 
                         # Normal block
-                        normalblock = sr_io.FileBlock()
                         normalblock.name = b'nrml'
-                        normalblock.data += sr_io.int2str(idx)
-                        for v in mesh.verts:
-                                normalblock.data += sr_io.float2str(v.normal.data[0])
-                                normalblock.data += sr_io.float2str(v.normal.data[1])
-                                normalblock.data += sr_io.float2str(v.normal.data[2])
                         normalblock.write(f)
 
                 # Surface blocks
@@ -284,7 +291,8 @@ class S2Model:
                                 bone.base.pos.data[c] = sr_io.endianfloat(block.data[offset:offset+4])
                                 offset += 4
                         offset += 4
-
+                        #print(bone.name + ":\n"+str(bone.base))
+                        #print(bone.invBase)
                         # 'fix' the bone matrix
                         #bone.base = matrix.multiplyMatrix(bone.base, yaw180)
                         #bone.invBase = matrix.multiplyMatrix(bone.invBase, yaw180)
@@ -314,8 +322,9 @@ class S2Model:
                         if block.data[offset + i] == 0:
                                 break
                         mesh.texture = mesh.texture + chr(block.data[offset + i])
-                offset += 64
-                offset += 4 #skip mode
+                offset += Mesh.TEX_NAME_LENGTH
+                mesh.mode = sr_io.endianint(block.data[offset:offset+4])
+                offset += 4
                 mesh.numVerts = sr_io.endianint(block.data[offset:offset+4])
                 offset += 4
                 offset += 6 * 4 #skip bounding box
@@ -337,9 +346,11 @@ class S2Model:
                 offset = 4
                 meshIndex = sr_io.endianint(block.data[0:4])
                 for i in range(self.meshes[meshIndex].numVerts):
+                        n = Vec3(0, 0, 0)
                         for j in range(3):
-                                self.meshes[meshIndex].verts[i].normal.data[j] = sr_io.endianfloat(block.data[offset:offset+4])
+                                n.data[j] = sr_io.endianfloat(block.data[offset:offset+4])
                                 offset += 4
+                        self.meshes[meshIndex].verts[i].normal.data = matrix.translateFromMatrix(yaw180, n).data
 
         def handleVertexBlock(self, block):
                 offset = 4

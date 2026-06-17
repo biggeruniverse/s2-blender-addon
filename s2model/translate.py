@@ -1,4 +1,4 @@
-# (c) 2023 DRX Dev Team
+# (c) 2023-2026 DRX Dev Team
 
 import os, sys, mathutils, math
 
@@ -22,7 +22,7 @@ def meshToBlender(mesh, mdl, midx, skel):
 
     blmesh.vertices.add(mesh.numVerts)
     blmesh.vertices.foreach_set("co",     [a for v in mesh.verts for a in (v.data[0], v.data[1], v.data[2])])
-    blmesh.vertices.foreach_set("normal", [a for v in mesh.verts for a in (v.normal.data[0], v.normal.data[1], v.normal.data[2])])
+    #blmesh.vertices.foreach_set("normal", [a for v in mesh.verts for a in (v.normal.data[0], v.normal.data[1], v.normal.data[2])])
 
     loops = []
     faces_loop_start = []
@@ -48,6 +48,11 @@ def meshToBlender(mesh, mdl, midx, skel):
     blmesh.update()
     blmesh.validate()
 
+    if hasattr(blmesh, "use_auto_smooth"):
+        blmesh.use_auto_smooth = True  # required pre-4.1 for custom normals to show
+    vnormals = [(v.normal.data[0], v.normal.data[1], v.normal.data[2]) for v in mesh.verts]
+    blmesh.normals_split_custom_set_from_vertices(vnormals)
+
     encoded_texture = mesh.texture.replace('.tga', '.png')
     name = bpy.path.display_name_from_filepath(mesh.texture)
     image = load_image(encoded_texture, os.path.dirname(mdl.filepath), recursive=True, place_holder=True)
@@ -59,7 +64,8 @@ def meshToBlender(mesh, mdl, midx, skel):
         mtex.base_color_texture.texcoords = 'UV'
         blmesh.materials.append(material)
 
-    blmesh.transform(mathutils.Matrix.Rotation(math.radians(180.0), 4, 'Z'))
+    # handled in handleVertexBlock
+    # blmesh.transform(mathutils.Matrix.Rotation(math.radians(180.0), 4, 'Z'))
     return blmesh
 
 
@@ -109,21 +115,32 @@ def toBlender(mdl):
     if mdl.bones:
         jointls = []
         bonels = [None] * len(mdl.bones)
+        root = None
 
         for bone in mdl.bones:
             if bone.parent is None:
                 bone_map[bone.idx] = 0
                 bn = skel.edit_bones[0]
                 bn.name = bone.name
+                mat = matrix.multiplyMatrix(model.yaw180, bone.base)
                 bn.matrix = [
-                    [bone.base.axis[0].data[0], bone.base.axis[0].data[1], bone.base.axis[0].data[2], 0.0],
-                    [bone.base.axis[1].data[0], bone.base.axis[1].data[1], bone.base.axis[1].data[2], 0.0],
-                    [bone.base.axis[2].data[0], bone.base.axis[2].data[1], bone.base.axis[2].data[2], 0.0],
-                    [bone.base.pos.data[0],     bone.base.pos.data[1],     bone.base.pos.data[2],     1.0],
+                    [mat.axis[0].data[0], mat.axis[0].data[1], mat.axis[0].data[2], 0.0],
+                    [mat.axis[1].data[0], mat.axis[1].data[1], mat.axis[1].data[2], 0.0],
+                    [mat.axis[2].data[0], mat.axis[2].data[1], mat.axis[2].data[2], 0.0],
+                    [mat.pos.data[0],     mat.pos.data[1],     mat.pos.data[2],     1.0],
                 ]
-                bn.head = (bone.base.pos.data[0], bone.base.pos.data[1], bone.base.pos.data[2])
-                bn.tail = (bone.base.pos.data[0], bone.base.pos.data[1], bone.base.pos.data[2] + 1)
+                bn.head = (mat.pos.data[0], mat.pos.data[1], mat.pos.data[2])
+                bn.tail = (mat.pos.data[0], mat.pos.data[1], mat.pos.data[2])
+                """if bone.children:
+                    pos = (bone.children[0].base.pos.data[0],
+                       bone.children[0].base.pos.data[1],
+                       bone.children[0].base.pos.data[2])
+                    bn.tail = pos
+                else:
+                    bn.tail = (bone.base.pos.data[0], bone.base.pos.data[1], bone.base.pos.data[2] + 1)"""
                 bonels[bone.idx] = bn
+                if bone.name == 'Scene Root':
+                    root = bn
                 for child in bone.children:
                     jointls.append((child, bn, bone))
 
@@ -133,19 +150,17 @@ def toBlender(mdl):
             bone_map[bone.idx] = bcount
             bcount += 1
             bn.parent = joint[1]
+            mat = matrix.multiplyMatrix(model.yaw180, bone.base)
             bn.matrix = [
-                [bone.base.axis[0].data[0], bone.base.axis[0].data[1], bone.base.axis[0].data[2], 0.0],
-                [bone.base.axis[1].data[0], bone.base.axis[1].data[1], bone.base.axis[1].data[2], 0.0],
-                [bone.base.axis[2].data[0], bone.base.axis[2].data[1], bone.base.axis[2].data[2], 0.0],
-                [bone.base.pos.data[0],     bone.base.pos.data[1],     bone.base.pos.data[2],     1.0],
+                [mat.axis[0].data[0], mat.axis[0].data[1], mat.axis[0].data[2], 0.0],
+                [mat.axis[1].data[0], mat.axis[1].data[1], mat.axis[1].data[2], 0.0],
+                [mat.axis[2].data[0], mat.axis[2].data[1], mat.axis[2].data[2], 0.0],
+                [mat.pos.data[0],     mat.pos.data[1],     mat.pos.data[2],     1.0],
             ]
-            bn.head = (bone.base.pos.data[0], bone.base.pos.data[1], bone.base.pos.data[2])
-            pos = (bone.base.pos.data[0], bone.base.pos.data[1] - 2, bone.base.pos.data[2])
-            if bone.children:
-                pos = (bone.children[0].base.pos.data[0],
-                       bone.children[0].base.pos.data[1],
-                       bone.children[0].base.pos.data[2])
-            bn.tail = pos
+            bn.head = (mat.pos.data[0], mat.pos.data[1], mat.pos.data[2])
+            t = matrix.multiplyVector(mat, Vec3(0.0, 1.0, 0.0))
+            bn.tail = (t.data[0], t.data[1], t.data[2])
+            #print(bn.name); print(bone.base); print(mat); print(bn.x_axis); print(bn.y_axis); print(bn.z_axis)
             bonels[bone.idx] = bn
             for child in bone.children:
                 jointls.append((child, bn, bone))
@@ -234,6 +249,10 @@ def addMesh(mdl, item, midx, bones):
         v.normal.data = [vert.normal[0], vert.normal[1], vert.normal[2]]
         v.texcoord = list(uv_map.get(i, (0.0, 0.0)))
         mesh.verts.append(v)
+        mesh.bmin = mesh.bmin.min(v)
+        mesh.bmax = mesh.bmax.max(v)
+        mdl.bmin = mdl.bmin.min(v)
+        mdl.bmax = mdl.bmax.max(v)
     mesh.numVerts = len(mesh.verts)
 
     # Build face list from triangulated mesh
@@ -254,12 +273,37 @@ def addMesh(mdl, item, midx, bones):
     if len(item.vertex_groups) > 1:
         mesh.blend = True
         mesh.boneLink = -1
+        mesh.mode = 1
+		
+        vg_to_bone = {}
         for vg in item.vertex_groups:
-            blList = blendedLinkGroup()
-            blList.mesh = midx
-            mdl.blendedLinks[-1].append(blList)
+            bone_idx = mdl.find_bone(vg.name)
+            if bone_idx >= 0:
+                vg_to_bone[vg.index] = bone_idx
+
+        blList = blendedLinkGroup()
+        blList.mesh = midx
+		
+        for v in range(len(mesh.verts)):
+            bw = blendedWeights()
+		
+            vert_weights = []
+            for g in blmesh.vertices[v].groups:
+                if g.group in vg_to_bone and g.weight > 0.0:
+                    vert_weights.append((vg_to_bone[g.group], g.weight))
+			
+            #FIXME: normalize?
+            bw.numWeights=len(vert_weights)
+            for b, w in vert_weights:
+                bw.weights.append(w)
+                bw.indexes.append(b)
+		
+            blList.links.append(bw)
+
+        mdl.blendedLinks[-1].append(blList)
     elif len(item.vertex_groups) == 1:
         mesh.boneLink = mdl.find_bone(item.vertex_groups[0].name)
+        mesh.mode = 2
         print("Linked to bone " + str(mesh.boneLink))
 
     mdl.meshes.append(mesh)
@@ -302,17 +346,21 @@ def fromBlender(useSelection=False):
 
     #capture the skeleton
     skel = bpy.data.armatures[-1]
-    for bone in skel.bones[1:]:
+    for bone in skel.bones:
         bn = Bone()
-        bn.base = matrix.fromBlenderMatrix(
+        bn.base = matrix.multiplyMatrix(model.yaw180, matrix.fromBlenderMatrix(
             [list(i) for i in bone.matrix] +
-            [[bone.head[0], bone.head[1], bone.head[2], 1.0]]
-        )
-        bn.invBase = matrix.matrix43_t()
+            [[bone.head[0], bone.head[1], bone.head[2]], 1.0]
+        ).invert())
+        bn.base.pos.data = [-bone.head[0], -bone.head[1], bone.head[2]]
+        bn.invBase = bn.base.invert()
         bn.idx = len(mdl.bones)
         bn.name = bone.name
-        bn.parent = skel.bones.find(bone.parent.name) if bone.parent else -1
+        bn.parent = skel.bones.find(bone.parent.name) if bone.parent else 0
         mdl.bones.append(bn)
+        # print(bn.name + ":\n"+str(bn.base))
+        # print(bn.invBase)
+        # print(bone.x_axis); print(bone.y_axis); print(bone.z_axis)
 
     mcount = 0
     for item in bpy.data.objects:

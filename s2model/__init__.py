@@ -1,8 +1,10 @@
+# (c) 2023-2026 DRX Dev Team
+
 # Required Blender information.
 bl_info = {
            "name": "S2 Importer/Exporter",
            "author": "DRX Dev Team",
-           "version": (1, 4, 0),
+           "version": (1, 5, 0),
            "blender": (3, 4, 0),
            "location": "File > Import-Export",
            "description": "Import/Export S2 Silverback models",
@@ -24,7 +26,7 @@ from s2model import translate
 # The main exporter class.
 class S2Exporter(bpy.types.Operator, ExportHelper):
    bl_idname       = "export_mesh.s2_model"
-   bl_label        = "S2 Exporter"
+   bl_label        = "Export S2 Model"
    bl_options      = {'PRESET'}
    filename_ext    = ".model"
    obj_name        = ""
@@ -73,7 +75,7 @@ class S2Exporter(bpy.types.Operator, ExportHelper):
 # The main importer class.
 class S2Importer(bpy.types.Operator, ImportHelper):
    bl_idname       = "import_mesh.s2_model"
-   bl_label        = "S2 Importer"
+   bl_label        = "Import S2 Model"
    bl_options      = {'PRESET'}
    filename_ext    = ".model"
    obj_name        = ""

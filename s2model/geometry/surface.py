@@ -1,5 +1,5 @@
 # (c) 2011 savagerebirth.com
-# (c) 2023 DRX Dev Team
+# (c) 2023-2026 DRX Dev Team
 
 from .vectors import Vec3
 from .mesh import Mesh
