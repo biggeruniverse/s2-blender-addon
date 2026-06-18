@@ -35,7 +35,7 @@ class S2Model:
                                 return i
                 return -1
 
-        def _bone_parent_index(self, bone):
+        def find_bone_parent_index(self, bone):
                 """Return the integer parent index for a bone, regardless of
                 whether bone.parent is already an int (fromBlender path) or a
                 Bone object (loadFile path)."""
@@ -87,7 +87,7 @@ class S2Model:
                         elif block.name == "lnk1":
                                 self.handleBlendedLinksBlock(block)
                         elif block.name == "lnk2":
-                                pass #we don't support this yet
+                                self.handleSingleLinksBlock(block)
                         elif block.name == "surf":
                                 self.handleSurfBlock(block)
                         else:
@@ -111,9 +111,7 @@ class S2Model:
                 boneblock = sr_io.FileBlock()
                 boneblock.name = b'bone'
                 for bone in self.bones:
-                        # FIX: bone.parent can be a Bone object (load path) or int (fromBlender path)
-                        parent_idx = self._bone_parent_index(bone)
-                        boneblock.data += sr_io.int2str(parent_idx)
+                        boneblock.data += sr_io.int2str(self.find_bone_parent_index(bone))
                         name_bytes = bone.name[:Bone.NAME_LENGTH].encode('utf-8') if isinstance(bone.name, str) else bone.name[:Bone.NAME_LENGTH]
                         boneblock.data += name_bytes
                         boneblock.data += bytes(b'\0' * (Bone.NAME_LENGTH-len(name_bytes)))
@@ -318,7 +316,7 @@ class S2Model:
                                 break
                         mesh.name = mesh.name + chr(block.data[offset + i])
                 offset += Mesh.NAME_LENGTH
-                for i in range(64):
+                for i in range(Mesh.TEX_NAME_LENGTH):
                         if block.data[offset + i] == 0:
                                 break
                         mesh.texture = mesh.texture + chr(block.data[offset + i])
@@ -330,6 +328,7 @@ class S2Model:
                 offset += 6 * 4 #skip bounding box
                 mesh.boneLink = sr_io.endianint(block.data[offset:offset+4])
                 self.meshes[meshIndex] = mesh
+                # print(mesh.name, self.bones[mesh.boneLink].name)
 
         def handleFaceBlock(self, block):
                 offset = 8
@@ -400,6 +399,9 @@ class S2Model:
                                 pos += 4
                         bl.links.append(bw)
                 self.blendedLinks[meshIndex].append(bl)
+
+        def handleSingleLinksBlock(self, block):
+            pass
 
         def handleSurfBlock(self, block):
                 #converting surfs from old s2 models is a huge pain...

@@ -4,7 +4,7 @@
 bl_info = {
            "name": "S2 Importer/Exporter",
            "author": "DRX Dev Team",
-           "version": (1, 5, 0),
+           "version": (1, 5, 1),
            "blender": (3, 4, 0),
            "location": "File > Import-Export",
            "description": "Import/Export S2 Silverback models",

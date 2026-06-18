@@ -160,6 +160,7 @@ def toBlender(mdl):
             bn.head = (mat.pos.data[0], mat.pos.data[1], mat.pos.data[2])
             t = matrix.multiplyVector(mat, Vec3(0.0, 1.0, 0.0))
             bn.tail = (t.data[0], t.data[1], t.data[2])
+            bn.length = 5
             #print(bn.name); print(bone.base); print(mat); print(bn.x_axis); print(bn.y_axis); print(bn.z_axis)
             bonels[bone.idx] = bn
             for child in bone.children:
@@ -172,7 +173,7 @@ def toBlender(mdl):
 
         if m.boneLink > -1:
             if m.boneLink < len(skel.edit_bones):
-                bone = skel.edit_bones[m.boneLink]
+                bone = bonels[m.boneLink]
                 mesh_obj.vertex_groups.new(name=bone.name)
                 for i in range(len(m.verts)):
                     mesh_obj.vertex_groups[0].add([i], 1.0, 'ADD')
@@ -304,7 +305,7 @@ def addMesh(mdl, item, midx, bones):
     elif len(item.vertex_groups) == 1:
         mesh.boneLink = mdl.find_bone(item.vertex_groups[0].name)
         mesh.mode = 2
-        print("Linked to bone " + str(mesh.boneLink))
+        print(mesh.name + " linked to bone " + str(mesh.boneLink))
 
     mdl.meshes.append(mesh)
 
@@ -349,16 +350,19 @@ def fromBlender(useSelection=False):
     for bone in skel.bones:
         bn = Bone()
         bn.base = matrix.multiplyMatrix(model.yaw180, matrix.fromBlenderMatrix(
-            [list(i) for i in bone.matrix] +
-            [[bone.head[0], bone.head[1], bone.head[2]], 1.0]
+            [list(i) for i in bone.matrix_local] +
+            [[bone.head_local[0], bone.head_local[1], bone.head_local[2]], 1.0]
         ).invert())
-        bn.base.pos.data = [-bone.head[0], -bone.head[1], bone.head[2]]
+        bn.base.pos.data = [-bone.head_local[0], -bone.head_local[1], bone.head_local[2]] #yaw180 applied manually
         bn.invBase = bn.base.invert()
-        bn.idx = len(mdl.bones)
+        bn.idx = skel.bones.find(bone.name)+1
         bn.name = bone.name
-        bn.parent = skel.bones.find(bone.parent.name) if bone.parent else 0
+        bn.parent = skel.bones.find(bone.parent.name)+1 if bone.parent else 0
         mdl.bones.append(bn)
-        # print(bn.name + ":\n"+str(bn.base))
+        # print(bn.name+": "+str(bn.idx) + " parent "+str(bn.parent))
+        # print(bn.base)
+        # print([bone.head[0], bone.head[1], bone.head[2]])
+        # print([bone.head_local[0], bone.head_local[1], bone.head_local[2]])
         # print(bn.invBase)
         # print(bone.x_axis); print(bone.y_axis); print(bone.z_axis)
 
