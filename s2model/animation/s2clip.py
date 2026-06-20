@@ -1,5 +1,6 @@
 # (c) 2011 savagerebirth.com
-# Import/Export plugin for Autodesk Maya
+# (c) 2023-2026 DRX Dev Team
+# Import/Export plugin for Blender
 
 import os
 import math
@@ -7,19 +8,17 @@ from .bone import Bone
 from .bone import BoneMotion
 from .bone import BoneMotionKey
 from ..geometry.vectors import Vec3
-import ..sr_io as sr_io
-import ..geometry.matrix as matrix
+from s2model import sr_io
+from ..geometry import matrix
 
 import bpy
 
 def initMotionBlock(name, keytype, idx):
         block = sr_io.FileBlock()
-        block.name = 'bmtn'
-        for i in range(Bone.NAME_LENGTH):
-                if i >= len(name):
-                        block.data += '\0'
-                else:
-                        block.data += name[i]
+        block.name = b'bmtn'
+        name_bytes = name[:Bone.NAME_LENGTH].encode('utf-8') if isinstance(name, str) else name[:Bone.NAME_LENGTH]
+        block.data += name_bytes
+        block.data += bytes(b'\0' * (Bone.NAME_LENGTH-len(name_bytes)))
         block.data += sr_io.int2str(idx)
         block.data += sr_io.int2str(keytype)
         return block
@@ -67,7 +66,7 @@ class S2Clip:
         size = os.path.getsize(filename)
         file = open(filename, "rb")
         filehead = file.read(4)
-        if filehead != "CLIP":
+        if filehead != b'CLIP':
             raise Exception("not a valid S2 clip file!")
         # chunk the file out into blocks
         while file.tell()+8 < size:
@@ -86,8 +85,8 @@ class S2Clip:
                 raise Exception("Invalid block name "+block.name)
 
         # 'fix' the scene root
-        #self.motions[0].keys[BoneMotionKey.MKEY_YAW][0].data = 180.0
-        self.motions[0].keys[BoneMotionKey.MKEY_PITCH][0].data -= 90.0
+        self.motions[0].keys[BoneMotionKey.MKEY_YAW][0].data = 180.0
+        #self.motions[0].keys[BoneMotionKey.MKEY_PITCH][0].data -= 90.0
         # so confused right now
 
     def saveFile(self, filename):
@@ -101,7 +100,7 @@ class S2Clip:
                 blocks.append(packBlockData(bmtn.name, BoneMotionKey.MKEY_ROLL, idx, motionDataToString(bmtn.keys[BoneMotionKey.MKEY_ROLL])))
                 blocks.append(packBlockData(bmtn.name, BoneMotionKey.MKEY_YAW, idx, motionDataToString(bmtn.keys[BoneMotionKey.MKEY_YAW])))
         f = open(filename, 'wb')
-        f.write('CLIP')
+        f.write(b'CLIP')
         for b in blocks:
                 b.write(f)
         f.close()
@@ -121,11 +120,7 @@ class S2Clip:
         
     def handleBoneMotionBlock(self, block):
         offset = 0
-        name = ''
-        for i in range(Bone.NAME_LENGTH):
-            if block.data[offset + i] == '\0':
-                break
-            name += block.data[offset + i]
+        name = block.data[offset:offset+Bone.NAME_LENGTH].decode('utf-8').rstrip('\x00')
         offset += Bone.NAME_LENGTH
         
         idx = sr_io.endianint(block.data[offset:offset+4])
@@ -137,7 +132,7 @@ class S2Clip:
         numKeys = sr_io.endianint(block.data[offset:offset+4])
         offset += 4
 
-        bmtn = self.motions[idx]
+		bmtn = BoneMotion()
         bmtn.name = name
 
         for i in range(numKeys):
@@ -157,3 +152,5 @@ class S2Clip:
                 key.data = block.data[offset:offset+1]
                 offset += 1
             bmtn.keys[key.type].append(key)
+		self.pop(idx)
+		self.motions.insert(idx, bmtn)
