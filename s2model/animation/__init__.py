@@ -8,11 +8,15 @@ __all__ = ["bone", "s2clip"]
 
 def toBlender(fname):
 	from . import s2clip
+	from bpy_extras.anim_utils import action_ensure_channelbag_for_slot
 	with open(fname, "r") as file:
 		lines = file.readlines()
 		defaults = ['idle', 'clips/idle.clip', '0', '-1', '30', '0', '0']
 		filepath = fname[0:fname.rfind(os.sep)+1]
-		print(filepath)
+
+		bpy.ops.object.mode_set(mode='POSE')
+		skel = bpy.data.objects["Armature"]
+		
 		# create all the actions
 		for line in lines:
 			if line.startswith('makeanim'):
@@ -23,13 +27,44 @@ def toBlender(fname):
 					c = s2clip.S2Clip()
 					c.loadFile(filepath+cmd[1])
 					clip = bpy.data.actions.new(cmd[0])
-					clip.frame_start = int(cmd[2])
-					clip.frame_end = int(cmd[3])
+					slot = clip.slots.new(id_type='OBJECT', name=cmd[0])
+					clip.frame_range = (float(cmd[2]), float(cmd[3]))
+					clip.use_frame_range = True
 					clip.use_cyclic = (int(cmd[5]) == 1)
+					if skel.animation_data is None:
+						skel.animation_data_create()
+
+					skel.animation_data.action = clip
+					skel.animation_data.action_slot = slot
+					channelbag = action_ensure_channelbag_for_slot(clip, slot)
+					last = [0.0, 0.0, 0.0]
+					for motion in c.motions:
+						bn = skel.pose.bones.get(motion.name)
+						if bn is not None:
+							for i in range(motion.num_keys):
+								bn.location = (-motion.keys[0][i], -motion.keys[1][i], motion.keys[2][i])
+								bn.keyframe_insert('location', frame=i)
+								bn.rotation_euler = (motion.keys[3][i]-last[0], motion.keys[4][i]-last[1], motion.keys[5][i]-last[2])
+								bn.rotation_mode = 'ZYX'
+								bn.keyframe_insert('rotation_euler', frame=i)
+								last = [motion.keys[3][i], motion.keys[4][i], motion.keys[5][i]]
+								#print(motion.name, i, bn.location, bn.rotation_euler)
+					"""loc_x = channelbag.fcurves.new("location", index=0)
+					loc_y = channelbag.fcurves.new("location", index=1)
+					loc_z = channelbag.fcurves.new("location", index=2)
+					rot_x = channelbag.fcurves.ensure("rotation_euler", index=0)
+					rot_y = channelbag.fcurves.ensure("rotation_euler", index=1)
+					rot_z = channelbag.fcurves.ensure("rotation_euler", index=2)
+					for motion in c.motions:
+						for i,key in enumerate(motion.keys):
+							if key.type == MKEY_X:
+								loc_x.keyframe_points.insert(i, motion.data)"""
+						
+						
 					
-					
-				except Exception as e:
+				except FileNotFoundError as e:
 					print(e)
+		bpy.ops.object.mode_set(mode='OBJECT')
 
 
 def fromBlender(fname):

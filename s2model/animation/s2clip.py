@@ -85,8 +85,7 @@ class S2Clip:
                 raise Exception("Invalid block name "+block.name)
 
         # 'fix' the scene root
-        self.motions[0].keys[BoneMotionKey.MKEY_YAW][0].data = 180.0
-        #self.motions[0].keys[BoneMotionKey.MKEY_PITCH][0].data -= 90.0
+        #self.motions[0].keys[BoneMotionKey.MKEY_YAW][0].data = 180.0
         # so confused right now
 
     def saveFile(self, filename):
@@ -132,25 +131,27 @@ class S2Clip:
         numKeys = sr_io.endianint(block.data[offset:offset+4])
         offset += 4
 
-		bmtn = BoneMotion()
+        bmtn = BoneMotion()
         bmtn.name = name
+        bmtn.num_keys = numKeys
+
+        for n in range(BoneMotionKey.MKEY_SCALE+1):
+            bmtn.keys[n] = [0.0] * numKeys
 
         for i in range(numKeys):
-            key = BoneMotionKey()
-            key.type = keyType
-            if key.type == BoneMotionKey.MKEY_X or key.type == BoneMotionKey.MKEY_Y or key.type == BoneMotionKey.MKEY_Z or key.type == BoneMotionKey.MKEY_SCALE:
-                key.data = sr_io.endianfloat(block.data[offset:offset+4])
+            data = 0.0
+            if keyType == BoneMotionKey.MKEY_X or keyType == BoneMotionKey.MKEY_Y or keyType == BoneMotionKey.MKEY_Z or keyType == BoneMotionKey.MKEY_SCALE:
+                data = sr_io.endianfloat(block.data[offset:offset+4])
                 offset += 4
-            elif key.type == BoneMotionKey.MKEY_PITCH or key.type == BoneMotionKey.MKEY_ROLL or key.type == BoneMotionKey.MKEY_YAW:
-                key.data = sr_io.endianfloat(block.data[offset:offset+4])
-                if key.data < 0:
-                    key.data += 360
-                if key.data > 360:
-                    key.data -= 360
+            elif keyType == BoneMotionKey.MKEY_PITCH or keyType == BoneMotionKey.MKEY_ROLL or keyType == BoneMotionKey.MKEY_YAW:
+                data = sr_io.endianfloat(block.data[offset:offset+4])
+                if data < 0:
+                    data += 360
+                if data > 360:
+                    data -= 360
                 offset += 4
-            elif key.type == BoneMotionKey.MKEY_VIS:
-                key.data = block.data[offset:offset+1]
+            elif keyType == BoneMotionKey.MKEY_VIS:
+                data = block.data[offset:offset+1]
                 offset += 1
-            bmtn.keys[key.type].append(key)
-		self.pop(idx)
-		self.motions.insert(idx, bmtn)
+            bmtn.keys[keyType][i] = data
+        self.motions.append(bmtn)

@@ -6,7 +6,7 @@ import bpy
 from bpy_extras.image_utils import load_image
 from bpy_extras import node_shader_utils
 
-from s2model import model
+from s2model import model, image
 from .geometry.mesh import Mesh
 from .geometry.surface import *
 from .animation.bone import Bone
@@ -14,6 +14,64 @@ from .geometry.blendedlinks import *
 from .geometry.vertex import Vertex
 from .geometry.face import Face
 import s2model.geometry.matrix as matrix
+
+
+def materialToBlender(blmesh, imagefile):
+    name = bpy.path.display_name_from_filepath(imagefile)
+    img = None
+    if '.tga' in imagefile:
+        encoded_texture = imagefile.replace('.tga', '.s2g')
+        img = image.toBlender(encoded_texture)
+    else:
+        img = load_image(imagefile, os.path.dirname(imagefile), recursive=True, place_holder=True)
+		
+    if img is not None:
+        material = bpy.data.materials.new(name=name)
+        mtex = node_shader_utils.PrincipledBSDFWrapper(material, is_readonly=False)
+        mtex.base_color_texture.image = img
+        mtex.base_color_texture.texcoords = 'UV'
+        mtex.roughness_set(0.25)
+        mtex.specular_set(0.0)
+		
+        mnode = material.node_tree.nodes.get('Principled BSDF')
+        mtexnode = material.node_tree.nodes.get('Image Texture')
+        mtexnode.interpolation = 'Cubic'
+		
+        material.node_tree.links.new(
+            mtexnode.outputs['Alpha'],
+            mnode.inputs['Alpha'])
+		
+        # normal map
+        try:
+            normtex = imagefile[:imagefile.rfind('.')] + '_normalmap' + imagefile[imagefile.rfind('.'):]
+            nimg = bpy.data.images.load(normtex)
+		
+            if nimg is not None:
+                nimg.colorspace_settings.name = 'Non-Color'
+                normimg = material.node_tree.nodes.new('ShaderNodeTexImage')
+                normimg.image = nimg
+                normimg.interpolation = 'Cubic'
+                norm = material.node_tree.nodes.new('ShaderNodeNormalMap')
+                material.node_tree.links.new(normimg.outputs['Color'], norm.inputs['Color'])
+                material.node_tree.links.new(norm.outputs['Normal'], mnode.inputs['Normal'])
+        except RuntimeError:
+            pass
+     
+	    # "gloss" map
+        try:
+            gmtex = imagefile[:imagefile.rfind('.')] + '_gm' + imagefile[imagefile.rfind('.'):]
+            gmimg = bpy.data.images.load(gmtex)
+		
+            if gmimg is not None:
+                gmimg.colorspace_settings.name = 'Non-Color'
+                gmnode = material.node_tree.nodes.new('ShaderNodeTexImage')
+                gmnode.image = gmimg
+                gmnode.interpolation = 'Cubic'
+                material.node_tree.links.new(gmnode.outputs['Color'], mnode.inputs['Metallic'])
+        except RuntimeError:
+            pass        
+	 
+        blmesh.materials.append(material)
 
 
 def meshToBlender(mesh, mdl, midx, skel):
@@ -53,16 +111,7 @@ def meshToBlender(mesh, mdl, midx, skel):
     vnormals = [(v.normal.data[0], v.normal.data[1], v.normal.data[2]) for v in mesh.verts]
     blmesh.normals_split_custom_set_from_vertices(vnormals)
 
-    encoded_texture = mesh.texture.replace('.tga', '.png')
-    name = bpy.path.display_name_from_filepath(mesh.texture)
-    image = load_image(encoded_texture, os.path.dirname(mdl.filepath), recursive=True, place_holder=True)
-
-    if image:
-        material = bpy.data.materials.new(name=name)
-        mtex = node_shader_utils.PrincipledBSDFWrapper(material, is_readonly=False)
-        mtex.base_color_texture.image = image
-        mtex.base_color_texture.texcoords = 'UV'
-        blmesh.materials.append(material)
+    materialToBlender(blmesh, os.path.dirname(mdl.filepath)+os.sep+mesh.texture)
 
     # handled in handleVertexBlock
     # blmesh.transform(mathutils.Matrix.Rotation(math.radians(180.0), 4, 'Z'))
